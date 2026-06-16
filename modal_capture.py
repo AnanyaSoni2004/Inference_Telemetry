@@ -22,12 +22,26 @@ MODEL_NAME = "google/gemma-4-E4B-it"
 CAPTURE_ATTN = True
 
 PROMPTS = [
-    "Explain why the sky appears blue, step by step.",
+    # 1. factual recall (short)
     "What is the capital of France?",
+    # 2. scientific explanation
+    "Explain why the sky appears blue, step by step.",
+    # 3. arithmetic reasoning
     "If a train travels 60 km in 1.5 hours, what is its average speed? Show your reasoning.",
+    # 4. code generation
     "Write a Python function that returns the nth Fibonacci number.",
+    # 5. historical summarization
     "Summarize the main causes of the First World War in a few sentences.",
+    # 6. long reading comprehension
     "Read the following passage carefully and then explain, in your own words, what it is describing. The water cycle is the continuous movement of water within the Earth and atmosphere. It begins when the sun heats water in oceans, lakes, and rivers, causing it to evaporate and rise into the air as water vapor. As this vapor rises, it cools and condenses into tiny droplets, forming clouds in a process called condensation. When the droplets in a cloud grow large and heavy enough, they fall back to the surface as precipitation, which can take the form of rain, snow, sleet, or hail. Some of this water soaks into the ground and is stored as groundwater, while some flows across the land as runoff, gradually making its way back into streams, rivers, and eventually the ocean. Plants also play a role: they absorb water through their roots and release it back into the air through their leaves in a process called transpiration. Together, evaporation, condensation, precipitation, runoff, and transpiration form a closed loop that recycles the same water over and over again across the entire planet. Because the total amount of water on Earth stays roughly constant, the water you drink today may have fallen as rain thousands of years ago, or even passed through a dinosaur long before humans existed. After reading this, summarize the five main stages of the water cycle and explain how they connect to one another in a single continuous process.",
+    # 7. creative writing
+    "Write a short poem about the ocean at night.",
+    # 8. logical / syllogistic reasoning
+    "All roses are flowers. Some flowers fade quickly. Can we conclude that some roses fade quickly? Explain your reasoning step by step.",
+    # 9. instruction following / prioritized list
+    "List 5 things you would need to survive on a deserted island and briefly explain why each is important.",
+    # 10. commonsense / physical reasoning
+    "If you place a sealed plastic bottle full of water in the freezer overnight, what will happen to it and why?",
 ]
 
 

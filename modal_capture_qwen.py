@@ -1,13 +1,39 @@
 """
-modal_capture_qwen.py - Qwen 3.5 activation capture on Modal.
-Identical harness to modal_capture.py; only the model differs.
-Outputs go to a per-model file in the same Volume, so this never
-collides with the Gemma capture.
+modal_capture_qwen.py - Qwen 3.5 multi-prompt activation capture on Modal.
+Same harness as modal_capture.py; uses the shared PROMPTS list so both
+models are always compared on identical inputs.
+
+Run:
+  modal run modal_capture_qwen.py
+  modal run modal_capture_qwen.py --model "Qwen/Qwen3.5-27B"
 """
 
 import modal
 
-app = modal.App("signature-capture")
+PROMPTS = [
+    # 1. factual recall (short)
+    "What is the capital of France?",
+    # 2. scientific explanation
+    "Explain why the sky appears blue, step by step.",
+    # 3. arithmetic reasoning
+    "If a train travels 60 km in 1.5 hours, what is its average speed? Show your reasoning.",
+    # 4. code generation
+    "Write a Python function that returns the nth Fibonacci number.",
+    # 5. historical summarization
+    "Summarize the main causes of the First World War in a few sentences.",
+    # 6. long reading comprehension
+    "Read the following passage carefully and then explain, in your own words, what it is describing. The water cycle is the continuous movement of water within the Earth and atmosphere. It begins when the sun heats water in oceans, lakes, and rivers, causing it to evaporate and rise into the air as water vapor. As this vapor rises, it cools and condenses into tiny droplets, forming clouds in a process called condensation. When the droplets in a cloud grow large and heavy enough, they fall back to the surface as precipitation, which can take the form of rain, snow, sleet, or hail. Some of this water soaks into the ground and is stored as groundwater, while some flows across the land as runoff, gradually making its way back into streams, rivers, and eventually the ocean. Plants also play a role: they absorb water through their roots and release it back into the air through their leaves in a process called transpiration. Together, evaporation, condensation, precipitation, runoff, and transpiration form a closed loop that recycles the same water over and over again across the entire planet. Because the total amount of water on Earth stays roughly constant, the water you drink today may have fallen as rain thousands of years ago, or even passed through a dinosaur long before humans existed. After reading this, summarize the five main stages of the water cycle and explain how they connect to one another in a single continuous process.",
+    # 7. creative writing
+    "Write a short poem about the ocean at night.",
+    # 8. logical / syllogistic reasoning
+    "All roses are flowers. Some flowers fade quickly. Can we conclude that some roses fade quickly? Explain your reasoning step by step.",
+    # 9. instruction following / prioritized list
+    "List 5 things you would need to survive on a deserted island and briefly explain why each is important.",
+    # 10. commonsense / physical reasoning
+    "If you place a sealed plastic bottle full of water in the freezer overnight, what will happen to it and why?",
+]
+
+app = modal.App("signature-capture-qwen")
 
 image = (
     modal.Image.debian_slim()
@@ -18,8 +44,7 @@ volume = modal.Volume.from_name("signatures-vol", create_if_missing=True)
 CACHE = "/cache"
 OUT = "/cache/out"
 
-MODEL_NAME = "Qwen/Qwen3.5-0.8B"   # cheap test model; switch to "Qwen/Qwen3.5-27B" for the real run
-PROMPT = "Explain why the sky appears blue, step by step."
+MODEL_NAME = "Qwen/Qwen3.5-27B"
 CAPTURE_ATTN = True
 
 
@@ -30,7 +55,7 @@ CAPTURE_ATTN = True
     secrets=[modal.Secret.from_name("huggingface")],
     timeout=3600,
 )
-def capture(prompt: str = PROMPT, model_name: str = MODEL_NAME,
+def capture(model_name: str = MODEL_NAME, prompts: list = PROMPTS,
             capture_attention: bool = CAPTURE_ATTN):
     import os
     os.environ["HF_HOME"] = CACHE
@@ -47,10 +72,6 @@ def capture(prompt: str = PROMPT, model_name: str = MODEL_NAME,
     )
     model.eval()
 
-    enc = tok(prompt, return_tensors="pt").to(model.device)
-    token_strs = tok.convert_ids_to_tokens(enc["input_ids"][0])
-
-    mlp_acts, head_out, handles = {}, {}, []
     candidates = [m for _, m in model.named_modules()
                   if isinstance(m, torch.nn.ModuleList) and len(m) > 0
                   and (hasattr(m[0], "mlp") or hasattr(m[0], "self_attn"))]
@@ -59,59 +80,56 @@ def capture(prompt: str = PROMPT, model_name: str = MODEL_NAME,
     n_heads = getattr(tcfg, "num_attention_heads", None)
     print(f"found {len(layers)} decoder layers, {n_heads} attention heads")
 
-    for i, layer in enumerate(layers):
-        mlp = getattr(layer, "mlp", None)
-        if mlp is not None and hasattr(mlp, "down_proj"):
-            def mlp_hook(m, inp, out, i=i):
-                mlp_acts[i] = inp[0].detach().float().cpu().squeeze(0)
-            handles.append(mlp.down_proj.register_forward_hook(mlp_hook))
-        sa = getattr(layer, "self_attn", None)
-        if sa is not None and hasattr(sa, "o_proj") and n_heads:
-            def head_hook(m, inp, out, i=i):
-                x = inp[0].detach().float().cpu().squeeze(0)
-                head_out[i] = x.view(x.shape[0], n_heads, x.shape[1] // n_heads)
-            handles.append(sa.o_proj.register_forward_hook(head_hook))
+    def run_one(prompt):
+        mlp_acts, head_out, handles = {}, {}, []
+        for i, layer in enumerate(layers):
+            mlp = getattr(layer, "mlp", None)
+            if mlp is not None and hasattr(mlp, "down_proj"):
+                def mh(m, inp, out, i=i):
+                    mlp_acts[i] = inp[0].detach().float().cpu().squeeze(0)
+                handles.append(mlp.down_proj.register_forward_hook(mh))
+            sa = getattr(layer, "self_attn", None)
+            if sa is not None and hasattr(sa, "o_proj") and n_heads:
+                def hh(m, inp, out, i=i):
+                    x = inp[0].detach().float().cpu().squeeze(0)
+                    head_out[i] = x.view(x.shape[0], n_heads, x.shape[1] // n_heads)
+                handles.append(sa.o_proj.register_forward_hook(hh))
+        enc = tok(prompt, return_tensors="pt").to(model.device)
+        with torch.no_grad():
+            o = model(**enc, output_hidden_states=True,
+                      output_attentions=capture_attention, use_cache=False)
+        for h in handles:
+            h.remove()
+        hidden = [h.detach().float().cpu().squeeze(0) for h in o.hidden_states]
+        attn = None
+        if capture_attention and getattr(o, "attentions", None):
+            attn = [None if a is None else a.detach().float().cpu().squeeze(0)
+                    for a in o.attentions]
+        return {"prompt": prompt,
+                "tokens": tok.convert_ids_to_tokens(enc["input_ids"][0]),
+                "hidden_states": hidden, "attentions": attn,
+                "mlp_acts": mlp_acts, "head_outputs": head_out}
 
-    with torch.no_grad():
-        o = model(**enc, output_hidden_states=True,
-                  output_attentions=capture_attention, use_cache=False)
-    for h in handles:
-        h.remove()
-
-    hidden = [h.detach().float().cpu().squeeze(0) for h in o.hidden_states]
-    attn = None
-    if capture_attention and getattr(o, "attentions", None):
-        attn = [None if a is None else a.detach().float().cpu().squeeze(0)
-                for a in o.attentions]
+    captures = []
+    for p in prompts:
+        print("capturing:", p[:50])
+        captures.append(run_one(p))
 
     safe = model_name.replace("/", "_")
     os.makedirs(OUT, exist_ok=True)
     out_path = f"{OUT}/signatures-{safe}.pt"
-    torch.save(
-        {"model": model_name, "prompt": prompt, "tokens": token_strs,
-         "hidden_states": hidden, "attentions": attn,
-         "mlp_acts": mlp_acts, "head_outputs": head_out},
-        out_path,
-    )
+    torch.save({"model": model_name, "prompts": prompts, "captures": captures}, out_path)
     volume.commit()
 
-    drift = [(hidden[L] - hidden[L - 1]).norm(dim=-1).mean().item()
-             for L in range(1, len(hidden))]
-    return {
-        "model": model_name,
-        "file": f"out/signatures-{safe}.pt",
-        "n_tokens": len(token_strs),
-        "n_layers": len(hidden) - 1,
-        "d_model": hidden[0].shape[-1],
-        "head_layers_captured": len(head_out),
-        "attn_layers": None if attn is None else sum(a is not None for a in attn),
-        "residual_drift_per_layer": drift,
-    }
+    return {"model": model_name, "file": f"out/signatures-{safe}.pt",
+            "n_prompts": len(prompts),
+            "n_layers": len(captures[0]["hidden_states"]) - 1,
+            "tokens_per_prompt": [len(c["tokens"]) for c in captures]}
 
 
 @app.local_entrypoint()
-def main():
-    s = capture.remote()
+def main(model: str = MODEL_NAME):
+    s = capture.remote(model_name=model)
     print("Capture summary:")
     for k, v in s.items():
         print(f"  {k}: {v}")
