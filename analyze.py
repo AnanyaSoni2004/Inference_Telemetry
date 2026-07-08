@@ -391,13 +391,147 @@ def token_journey(path, prompt_idx=0):
         print("  (pip install matplotlib for the visual plot)")
 
 
+def diffusion_journey(path, prompt_idx=0):
+    """Analyse how tokens crystallize across denoising steps in a diffusion model."""
+    import torch.nn.functional as F
+
+    data    = load(path)
+    short   = data.get("model", "?").split("/")[-1]
+    caps    = data["captures"]
+    n_steps = data.get("n_steps", 20)
+
+    if prompt_idx >= len(caps):
+        print(f"error: prompt_idx {prompt_idx} out of range (0-{len(caps)-1})")
+        return
+
+    cap          = caps[prompt_idx]
+    prompt       = cap["prompt"]
+    final_tokens = cap["final_tokens"]
+    locked_step  = cap["locked_step"]          # list[int] len=gen_length
+    conf_hist    = cap["confidence_history"]   # list of tensor[gen_len]
+    pred_hist    = cap["pred_history"]
+    gen_length   = cap["gen_length"]
+
+    print(f"\n{'='*74}")
+    print(f"  Diffusion token crystallization: {short}")
+    print(f"  Prompt [{prompt_idx}]: {prompt[:70]}")
+    print(f"  {gen_length} generation tokens, {n_steps} denoising steps")
+    print(f"{'='*74}")
+
+    # ── Crystallization order ──────────────────────────────────────────────
+    print(f"\n  Token crystallization order (earliest locked = most confident first):")
+    print(f"  {'step':>5}  {'pos':>4}  {'token':>18}  confidence-at-lock")
+    print(f"  {'-'*60}")
+    order = sorted(enumerate(locked_step), key=lambda x: (x[1], x[0]))
+    for pos, step in order:
+        if step < 0 or step >= len(conf_hist):
+            continue
+        tok_str  = repr(final_tokens[pos])[:16] if pos < len(final_tokens) else "?"
+        conf_val = conf_hist[step][pos].item() if pos < conf_hist[step].shape[0] else 0.0
+        bar      = "█" * int(conf_val * 20)
+        print(f"  {step:>5}  {pos:>4}  {tok_str:>18}  {conf_val:.3f}  {bar}")
+
+    # ── Step-wise confidence rise ──────────────────────────────────────────
+    avg_conf = [ch.mean().item() for ch in conf_hist]
+    print(f"\n  Average confidence across all gen tokens per denoising step:")
+    print(f"  {'step':>5}  {'avg_conf':>9}  bar")
+    print(f"  {'-'*50}")
+    for s, c in enumerate(avg_conf):
+        bar = "█" * int(c * 40)
+        print(f"  {s:>5}  {c:>9.4f}  {bar}")
+
+    # ── Early vs late crystallizers ────────────────────────────────────────
+    early_cutoff = n_steps // 3
+    late_cutoff  = 2 * n_steps // 3
+
+    early = [(pos, s) for pos, s in enumerate(locked_step) if 0 <= s <= early_cutoff]
+    mid   = [(pos, s) for pos, s in enumerate(locked_step) if early_cutoff < s <= late_cutoff]
+    late  = [(pos, s) for pos, s in enumerate(locked_step) if s > late_cutoff]
+
+    def show_group(label, group):
+        print(f"\n  {label} ({len(group)} tokens):")
+        for pos, step in sorted(group, key=lambda x: x[1])[:8]:
+            tok = repr(final_tokens[pos])[:16] if pos < len(final_tokens) else "?"
+            print(f"    step {step:>2}  pos {pos:>3}  {tok}")
+
+    show_group(f"Locked early  (steps 0-{early_cutoff})",   early)
+    show_group(f"Locked middle (steps {early_cutoff+1}-{late_cutoff})", mid)
+    show_group(f"Locked late   (steps {late_cutoff+1}-{n_steps-1})",  late)
+
+    # ── Hidden state drift across snapshot steps ───────────────────────────
+    snaps = cap.get("hidden_snapshots", {})
+    if snaps:
+        snap_steps = sorted(snaps.keys())
+        print(f"\n  Hidden state drift between snapshot steps "
+              f"(at sampled layers, gen tokens only):")
+        prompt_len = cap.get("prompt_len", 0)
+        for li in sorted(next(iter(snaps.values())).keys()):
+            tensors = [snaps[s][li][prompt_len:] for s in snap_steps
+                       if li in snaps[s]]
+            if len(tensors) < 2:
+                continue
+            drifts = []
+            for i in range(1, len(tensors)):
+                d = ((tensors[i] - tensors[i-1]).norm(dim=-1)
+                     / tensors[i-1].norm(dim=-1).clamp_min(1e-6)).mean().item()
+                drifts.append(d)
+            drift_str = "  ".join(f"{d:.3f}" for d in drifts)
+            print(f"    layer {li:>2}:  {drift_str}")
+
+    # ── Save plot ──────────────────────────────────────────────────────────
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        conf_mat = torch.stack(conf_hist, dim=0).numpy()   # [steps, gen_len]
+        steps_ax = list(range(len(conf_hist)))
+
+        fig, axes = plt.subplots(1, 3, figsize=(20, max(5, gen_length * 0.18)))
+
+        im = axes[0].imshow(conf_mat.T, aspect="auto", cmap="viridis",
+                            vmin=0, vmax=1, interpolation="nearest")
+        axes[0].set_xlabel("denoising step")
+        axes[0].set_ylabel("gen token position")
+        axes[0].set_title(f"Confidence per token per step\n{short}")
+        plt.colorbar(im, ax=axes[0])
+
+        # Mark locked step per token
+        locked_arr = np.array(locked_step, dtype=float)
+        locked_arr[locked_arr < 0] = np.nan
+        axes[1].barh(range(gen_length), locked_arr, color="tomato")
+        axes[1].set_xlabel("denoising step locked")
+        axes[1].set_ylabel("gen token position")
+        axes[1].set_title("Crystallization step per token")
+        axes[1].invert_yaxis()
+        if final_tokens:
+            axes[1].set_yticks(range(gen_length))
+            axes[1].set_yticklabels(
+                [repr(t)[:10] for t in final_tokens[:gen_length]], fontsize=5)
+
+        axes[2].plot(steps_ax, avg_conf, marker="o", color="steelblue")
+        axes[2].set_xlabel("denoising step")
+        axes[2].set_ylabel("avg confidence")
+        axes[2].set_title("Confidence rise across steps\n(model becoming more certain)")
+        axes[2].grid(alpha=0.3)
+
+        fig.tight_layout()
+        out_file = f"diffusion_journey_{short}_p{prompt_idx}.png"
+        fig.savefig(out_file, dpi=120, bbox_inches="tight")
+        print(f"\n  saved plot -> {out_file}")
+    except ImportError:
+        print("  (pip install matplotlib for plots)")
+
+
 if __name__ == "__main__":
     paths = sys.argv[1:]
     if not paths:
         print("usage: python analyze.py file1.pt [file2.pt ...]")
-        print("       python analyze.py --compare gemma.pt qwen.pt")
-        print("       python analyze.py --layers  gemma.pt qwen.pt")
-        print("       python analyze.py --tokens  model.pt [prompt_idx]")
+        print("       python analyze.py --compare    gemma.pt qwen.pt")
+        print("       python analyze.py --layers     gemma.pt qwen.pt")
+        print("       python analyze.py --tokens     model.pt [prompt_idx]")
+        print("       python analyze.py --diffusion  llada.pt [prompt_idx]")
         sys.exit(1)
     if paths[0] == "--compare" and len(paths) == 3:
         compare(paths[1], paths[2])
@@ -406,6 +540,9 @@ if __name__ == "__main__":
     elif paths[0] == "--tokens" and len(paths) >= 2:
         idx = int(paths[2]) if len(paths) == 3 else 0
         token_journey(paths[1], idx)
+    elif paths[0] == "--diffusion" and len(paths) >= 2:
+        idx = int(paths[2]) if len(paths) == 3 else 0
+        diffusion_journey(paths[1], idx)
     else:
         sigs = [analyze_file(p) for p in paths]
         plot(sigs)

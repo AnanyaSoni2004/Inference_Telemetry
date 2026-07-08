@@ -22,26 +22,149 @@ MODEL_NAME = "google/gemma-4-E4B-it"
 CAPTURE_ATTN = True
 
 PROMPTS = [
-    # 1. factual recall (short)
-    "What is the capital of France?",
-    # 2. scientific explanation
-    "Explain why the sky appears blue, step by step.",
-    # 3. arithmetic reasoning
-    "If a train travels 60 km in 1.5 hours, what is its average speed? Show your reasoning.",
-    # 4. code generation
-    "Write a Python function that returns the nth Fibonacci number.",
-    # 5. historical summarization
-    "Summarize the main causes of the First World War in a few sentences.",
-    # 6. long reading comprehension
-    "Read the following passage carefully and then explain, in your own words, what it is describing. The water cycle is the continuous movement of water within the Earth and atmosphere. It begins when the sun heats water in oceans, lakes, and rivers, causing it to evaporate and rise into the air as water vapor. As this vapor rises, it cools and condenses into tiny droplets, forming clouds in a process called condensation. When the droplets in a cloud grow large and heavy enough, they fall back to the surface as precipitation, which can take the form of rain, snow, sleet, or hail. Some of this water soaks into the ground and is stored as groundwater, while some flows across the land as runoff, gradually making its way back into streams, rivers, and eventually the ocean. Plants also play a role: they absorb water through their roots and release it back into the air through their leaves in a process called transpiration. Together, evaporation, condensation, precipitation, runoff, and transpiration form a closed loop that recycles the same water over and over again across the entire planet. Because the total amount of water on Earth stays roughly constant, the water you drink today may have fallen as rain thousands of years ago, or even passed through a dinosaur long before humans existed. After reading this, summarize the five main stages of the water cycle and explain how they connect to one another in a single continuous process.",
-    # 7. creative writing
-    "Write a short poem about the ocean at night.",
-    # 8. logical / syllogistic reasoning
-    "All roses are flowers. Some flowers fade quickly. Can we conclude that some roses fade quickly? Explain your reasoning step by step.",
-    # 9. instruction following / prioritized list
-    "List 5 things you would need to survive on a deserted island and briefly explain why each is important.",
-    # 10. commonsense / physical reasoning
-    "If you place a sealed plastic bottle full of water in the freezer overnight, what will happen to it and why?",
+    # 1. multi-hop factual reasoning
+    (
+        "A traveller starts in the capital of the country that won the 2018 FIFA World Cup. "
+        "She takes a train to the largest city in the country directly to the east of that nation. "
+        "From there she flies to the capital of the country whose currency is the Yen. "
+        "Finally she takes a ferry to the island nation located to the south of that country "
+        "whose name means 'eastern sea' in Korean. "
+        "List each stop in order, name the city and country at each step, and explain your "
+        "reasoning for every leg of the journey."
+    ),
+    # 2. deep scientific explanation
+    (
+        "Explain in detail how a modern large language model processes a sentence. "
+        "Start from the raw text string and walk through tokenisation, embedding lookup, "
+        "positional encoding, the self-attention mechanism including the role of queries, "
+        "keys and values, the feed-forward sublayer, residual connections and layer normalisation. "
+        "Then explain what 'next-token prediction' means, how the model is trained with "
+        "cross-entropy loss, and why scaling the number of parameters tends to improve performance. "
+        "Use concrete numerical examples where helpful."
+    ),
+    # 3. multi-step math word problem
+    (
+        "A factory produces widgets on three shifts. The morning shift (8 h) produces 120 widgets "
+        "per hour but has a 5% defect rate. The afternoon shift (6 h) produces 95 widgets per hour "
+        "with a 3% defect rate. The night shift (10 h) produces 80 widgets per hour with a 7% "
+        "defect rate. "
+        "Answer all of the following, showing every calculation step: "
+        "(a) How many total widgets are produced in one full day? "
+        "(b) How many defective widgets are produced per day? "
+        "(c) What is the overall defect rate for the day? "
+        "(d) If the factory needs to ship 3,000 non-defective widgets tomorrow and currently has "
+        "500 in stock, how many full days of production are needed?"
+    ),
+    # 4. code generation with explanation
+    (
+        "Write a Python class called BinarySearchTree that supports the following operations: "
+        "insert(value), search(value) returning True/False, delete(value), and "
+        "inorder_traversal() returning a sorted list of all values. "
+        "Handle edge cases such as deleting a node with two children correctly using the "
+        "in-order successor strategy. "
+        "After the code, explain in plain English how the delete operation works for each of "
+        "the three cases: leaf node, node with one child, and node with two children. "
+        "Include a short usage example at the bottom."
+    ),
+    # 5. historical causal chain analysis
+    (
+        "Trace the causal chain that led from the assassination of Archduke Franz Ferdinand "
+        "in June 1914 to the United States entering the First World War in April 1917. "
+        "Your answer should cover: the alliance system and why a local conflict escalated to a "
+        "continental war within six weeks; the Western Front stalemate and its effect on German "
+        "strategy; the decision to resume unrestricted submarine warfare and its risks; the "
+        "Zimmermann Telegram; and the domestic political pressures on President Wilson. "
+        "For each factor explain both what happened and why it mattered causally."
+    ),
+    # 6. long dual-passage reading comprehension
+    (
+        "Read the following two passages and answer the questions below.\n\n"
+        "PASSAGE A: Photosynthesis is the process by which green plants, algae, and some bacteria "
+        "convert light energy into chemical energy stored in glucose. It occurs mainly in the "
+        "chloroplasts, organelles that contain the pigment chlorophyll. The overall reaction can "
+        "be summarised as: 6CO2 + 6H2O + light energy → C6H12O6 + 6O2. Photosynthesis has two "
+        "main stages. The light-dependent reactions occur in the thylakoid membranes and capture "
+        "solar energy to produce ATP and NADPH while splitting water molecules and releasing "
+        "oxygen. The light-independent reactions (Calvin cycle) occur in the stroma and use ATP "
+        "and NADPH to fix carbon dioxide into glucose. Factors that limit the rate of "
+        "photosynthesis include light intensity, carbon dioxide concentration, and temperature.\n\n"
+        "PASSAGE B: Cellular respiration is the process by which organisms break down glucose "
+        "to release energy in the form of ATP. In aerobic respiration, which requires oxygen, "
+        "glucose is first broken down through glycolysis in the cytoplasm into pyruvate, yielding "
+        "2 ATP and 2 NADH. Pyruvate then enters the mitochondria, where the Krebs cycle generates "
+        "additional NADH, FADH2, and 2 ATP per glucose. Finally, the electron transport chain on "
+        "the inner mitochondrial membrane uses those electron carriers to produce approximately "
+        "32-34 ATP through oxidative phosphorylation. The overall reaction is the reverse of "
+        "photosynthesis: C6H12O6 + 6O2 → 6CO2 + 6H2O + ~36-38 ATP.\n\n"
+        "Questions: (1) Identify two ways in which photosynthesis and cellular respiration are "
+        "complementary processes. (2) Where in the cell does each process primarily occur, and "
+        "why is compartmentalisation important? (3) A student claims that photosynthesis and "
+        "respiration are simply the reverse of each other. Is this fully accurate? Explain. "
+        "(4) If a plant is placed in complete darkness for several days, predict what will happen "
+        "to its glucose stores and its oxygen consumption, and justify your answer."
+    ),
+    # 7. constrained creative writing
+    (
+        "Write a short story of exactly four paragraphs set on the last operating lighthouse "
+        "on a remote coastline. The story must satisfy all of the following constraints: "
+        "the lighthouse keeper is named Mara and has worked there for thirty years; "
+        "a ship appears in a storm in paragraph two; "
+        "the third paragraph must include a memory from Mara's childhood; "
+        "the story must end ambiguously — the reader should not know whether the ship was saved. "
+        "Use vivid sensory detail in every paragraph and vary your sentence length deliberately."
+    ),
+    # 8. multi-premise logical reasoning
+    (
+        "Consider the following set of statements:\n"
+        "1. All mammals are warm-blooded.\n"
+        "2. All warm-blooded animals have a four-chambered heart OR are birds.\n"
+        "3. Dolphins are mammals.\n"
+        "4. No cold-blooded animal can regulate its own body temperature independently of "
+        "the environment.\n"
+        "5. Sharks are not mammals and are not birds.\n"
+        "6. Some animals with four-chambered hearts can live in the ocean.\n\n"
+        "Using only these premises and strict logical inference, answer each question and "
+        "show your reasoning chain: "
+        "(a) Is a dolphin warm-blooded? "
+        "(b) Does a dolphin have a four-chambered heart or is it a bird? "
+        "(c) Can a shark regulate its own body temperature independently? "
+        "(d) Is it possible for an ocean-dwelling animal to have a four-chambered heart? "
+        "(e) What can you NOT determine from these premises alone, and why?"
+    ),
+    # 9. complex multi-step instructional task
+    (
+        "You are helping a small business owner set up a basic financial tracking system in Python. "
+        "Complete all of the following tasks in a single coherent Python script:\n"
+        "1. Define a Transaction dataclass with fields: date (str), description (str), "
+        "amount (float), and category (str).\n"
+        "2. Write a function add_transaction(ledger, transaction) that appends to a list.\n"
+        "3. Write a function monthly_summary(ledger, month, year) that returns total income "
+        "(positive amounts), total expenses (negative amounts), and net balance for that month.\n"
+        "4. Write a function top_expense_categories(ledger, n=3) that returns the n categories "
+        "with the highest total spending.\n"
+        "5. Write a function export_to_csv(ledger, filename) that saves all transactions.\n"
+        "6. Demonstrate the system with at least 8 sample transactions across at least 3 categories "
+        "and 2 months, then call each function and print the results.\n"
+        "Add docstrings to every function and handle the case where the ledger is empty."
+    ),
+    # 10. extended cause-and-effect scenario
+    (
+        "A mid-sized city of 500,000 people decides to ban all private cars from its city centre "
+        "starting next year. Analyse the consequences of this policy across the following five "
+        "dimensions, considering both first-order and second-order effects:\n\n"
+        "(a) Transportation and mobility: How will residents, workers, and visitors get around? "
+        "What infrastructure investments will be needed and over what timeline?\n\n"
+        "(b) Local economy: Which types of businesses will benefit and which will be harmed? "
+        "Consider both short-term disruption and long-term adaptation.\n\n"
+        "(c) Environment and public health: Quantify the likely effects on air quality, "
+        "noise pollution, and physical activity levels. What second-order health effects follow?\n\n"
+        "(d) Social equity: Which socioeconomic groups will be most affected positively and "
+        "negatively? How might the policy widen or narrow existing inequalities?\n\n"
+        "(e) Political feasibility: What opposition is likely, from whom, and what compromises "
+        "or phase-in strategies might make the policy more acceptable?\n\n"
+        "Conclude with an overall assessment: is this policy likely to be net beneficial for the "
+        "city over a 10-year horizon, and what are the two or three critical success factors?"
+    ),
 ]
 
 
